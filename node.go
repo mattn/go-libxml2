@@ -75,6 +75,7 @@ type Node interface {
 	ChildNodes() []Node
 	OwnerDocument() *XmlDoc
 	FindNodes(string) ([]Node, error)
+	IsSameNode(Node) bool
 	LastChild() Node
 	NodeName() string
 	NextSibling() Node
@@ -123,12 +124,6 @@ func wrapToNode(n *C.xmlNode) Node {
 	switch XmlElementType(n._type) {
 	case XmlElementNode:
 		return wrapXmlElement((*C.xmlElement)(unsafe.Pointer(n)))
-		/*
-			case XmlOwnerDocumentNode:
-				d := (*C.xmlDoc)(unsafe.Pointer(n))
-				n := C.xmlDocGetRootElement(d) // XXX Should check for n == nil
-				return &XmlDoc{ptr: d, root: n}
-		*/
 	case XmlTextNode:
 		return &XmlText{&XmlNode{&xmlNode{ptr: n}}}
 	default:
@@ -172,6 +167,10 @@ func (n *xmlNode) OwnerDocument() *XmlDoc {
 
 func (n *xmlNode) FindNodes(xpath string) ([]Node, error) {
 	return findNodes(n, xpath)
+}
+
+func (n *xmlNode) IsSameNode(other Node) bool {
+	return n.pointer() == other.pointer()
 }
 
 func (n *xmlNode) LastChild() Node {
@@ -231,37 +230,28 @@ func childNodes(n Node) []Node {
 	return ret
 }
 
-/* TODO: there seems to be some black magic involved
-func (n *XmlNode) String() string {
-	var xc *C.xmlChar
-	i := C.int(0)
-	C.xmlNodeDumpMemory(n.ptr, &xc, &i)
-	return xmlCharToString(xc)
-}
-*/
-
-func xmlDocGetRootElement(d *C.xmlDoc) (*C.xmlNode, error) {
-	n := C.xmlDocGetRootElement(d)
-	if n == nil {
-		return nil, ErrNodeNotFound
-	}
-	return n, nil
-}
-
 func (d *XmlDoc) pointer() unsafe.Pointer {
 	return unsafe.Pointer(d.ptr)
 }
 
-func (d *XmlDoc) RootNode() (*XmlNode, error) {
+func (d *XmlDoc) DocumentElement() Node {
 	if d.ptr == nil || d.root == nil {
-		return nil, ErrNodeNotFound
+		return nil
 	}
 
-	return &XmlNode{&xmlNode{ptr: d.root}}, nil
+	return wrapToNode(d.root)
 }
 
 func (d *XmlDoc) FindNodes(xpath string) ([]Node, error) {
-	return wrapXmlNode(d.root).FindNodes(xpath)
+	root := d.DocumentElement()
+	if root == nil {
+		return nil, ErrNodeNotFound
+	}
+	return root.FindNodes(xpath)
+}
+
+func (d *XmlDoc) Encoding() string {
+	return xmlCharToString(d.ptr.encoding)
 }
 
 func (d *XmlDoc) Free() {
